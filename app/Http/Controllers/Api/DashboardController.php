@@ -14,30 +14,59 @@ class DashboardController extends Controller
 {
     use Cacheable;
 
-    public function peserta()
+        public function peserta(Request $request)
     {
-        $user = Auth::user();
-        $team = $user->teamAsKetua;
-        if (!$team) {
-            return response()->json(['message' => 'Tim tidak ditemukan'], 404);
+        Log::info('Dashboard peserta dipanggil', ['user_id' => $request->user()?->id]);
+
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthenticated'], 401);
+            }
+
+            $team = Team::where('ketua_id', $user->id)
+                ->orWhereHas('anggota', fn($q) => $q->where('user_id', $user->id))
+                ->first();
+
+            if (!$team) {
+                return response()->json([
+                    'progress' => '0%',
+                    'points' => '0',
+                    'rank' => '#N/A',
+                    'team_name' => 'Belum ada tim',
+                    'team_members' => [],
+                ]);
+            }
+
+            $submission = Submission::where('team_id', $team->id)->latest()->first();
+            $progress = $submission ? '50%' : '0%';
+
+            $teamMembers = $team->members->map(fn($a) => [
+                'name' => $a->name,
+                'email' => $a->email,
+                'role' => 'Anggota',
+            ]);
+
+            return response()->json([
+                'progress' => $progress,
+                'points' => '1.250',
+                'rank' => '#12',
+                'team_name' => $team->team_name,
+                'team_members' => $teamMembers,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error di DashboardController@peserta: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Terjadi kesalahan server',
+                'debug' => $e->getMessage() // hanya untuk development
+            ], 500);
         }
-
-        $data = $this->rememberDashboard('peserta', $user->id, function () use ($team) {
-            $submissions = Submission::where('team_id', $team->id)->with('stage')->get();
-            $latestStage = $submissions->sortByDesc('stage.stage_order')->first();
-            $scores = Score::whereIn('submission_id', $submissions->pluck('id'))->with('juri')->get();
-            return [
-                'team' => $team,
-                'submissions' => $submissions,
-                'current_stage' => $latestStage?->stage,
-                'average_score' => $scores->avg('total_score'),
-                'scores' => $scores,
-            ];
-        });
-
-        return response()->json($data);
     }
-
     public function admin()
     {
         $user = Auth::user();

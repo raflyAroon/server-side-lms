@@ -9,12 +9,14 @@ use App\Traits\Cacheable;
 
 class FaqController extends Controller
 {
-    use Cacheable;
-
     public function index()
     {
-        $faqs = $this->rememberFaqs();
-        return response()->json($faqs);
+        try {
+            return response()->json(Faq::orderBy('display_order')->get());
+        } catch (\Exception $e) {
+            Log::error('FAQ API error: ' . $e->getMessage());
+            return response()->json(['error' => 'Terjadi kesalahan server'], 500);
+        }
     }
 
     public function store(Request $request)

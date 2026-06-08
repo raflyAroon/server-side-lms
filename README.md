@@ -277,6 +277,394 @@ backend/
 
 ---
 
+## Query Database for PostgreSQL
+-- =====================================================
+-- DATABASE: LMS_CODINGMU_MPR
+-- PostgreSQL 14+
+-- =====================================================
+
+-- Hapus tabel jika ada (urutan FK terbalik)
+DROP TABLE IF EXISTS score_detail CASCADE;
+DROP TABLE IF EXISTS score CASCADE;
+DROP TABLE IF EXISTS submission_file CASCADE;
+DROP TABLE IF EXISTS submission CASCADE;
+DROP TABLE IF EXISTS selection_result CASCADE;
+DROP TABLE IF EXISTS certificate CASCADE;
+DROP TABLE IF EXISTS announcement CASCADE;
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP TABLE IF EXISTS otp CASCADE;
+DROP TABLE IF EXISTS rubric_criteria CASCADE;
+DROP TABLE IF EXISTS rubric CASCADE;
+DROP TABLE IF EXISTS schedule CASCADE;
+DROP TABLE IF EXISTS stage CASCADE;
+DROP TABLE IF EXISTS event CASCADE;
+DROP TABLE IF EXISTS team_history CASCADE;
+DROP TABLE IF EXISTS team CASCADE;
+DROP TABLE IF EXISTS faq CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- Hapus enum types jika ada
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS project_type_enum CASCADE;
+DROP TYPE IF EXISTS announcement_type CASCADE;
+
+-- =====================================================
+-- ENUM TYPES
+-- =====================================================
+CREATE TYPE user_role AS ENUM ('admin', 'juri', 'peserta');
+CREATE TYPE project_type_enum AS ENUM ('website_application', 'game_development', 'video_design');
+CREATE TYPE announcement_type AS ENUM ('global', 'stage', 'team');
+
+-- =====================================================
+-- TABLES
+-- =====================================================
+
+-- 1. USERS
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role user_role NOT NULL DEFAULT 'peserta',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. TEAM (hanya ketua tim sebagai user)
+CREATE TABLE team (
+    id SERIAL PRIMARY KEY,
+    team_name VARCHAR(100) NOT NULL,
+    institution VARCHAR(200),
+    ketua_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. TEAM_HISTORY (riwayat perubahan data tim)
+CREATE TABLE team_history (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER NOT NULL REFERENCES team(id) ON DELETE CASCADE,
+    snapshot_data JSONB NOT NULL,  -- menyimpan full snapshot data tim sebelum perubahan
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    changed_by VARCHAR(100)  -- bisa diisi email atau user_id
+);
+
+-- 4. EVENT
+CREATE TABLE event (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    description TEXT,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. STAGE
+CREATE TABLE stage (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    stage_order INTEGER NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. SUBMISSION
+CREATE TABLE submission (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER NOT NULL REFERENCES team(id) ON DELETE CASCADE,
+    stage_id INTEGER NOT NULL REFERENCES stage(id) ON DELETE CASCADE,
+    project_type project_type_enum NOT NULL,
+    description TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. SUBMISSION_FILE (upload massal)
+CREATE TABLE submission_file (
+    id SERIAL PRIMARY KEY,
+    submission_id INTEGER NOT NULL REFERENCES submission(id) ON DELETE CASCADE,
+    file_url TEXT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_size INTEGER, -- in bytes
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8. RUBRIC (dinamis per stage)
+CREATE TABLE rubric (
+    id SERIAL PRIMARY KEY,
+    stage_id INTEGER NOT NULL REFERENCES stage(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. RUBRIC_CRITERIA
+CREATE TABLE rubric_criteria (
+    id SERIAL PRIMARY KEY,
+    rubric_id INTEGER NOT NULL REFERENCES rubric(id) ON DELETE CASCADE,
+    criterion_name VARCHAR(100) NOT NULL,
+    max_score INTEGER NOT NULL CHECK (max_score > 0),
+    weight DECIMAL(5,2) DEFAULT 1.0 CHECK (weight >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 10. SCORE (rekap nilai otomatis)
+CREATE TABLE score (
+    id SERIAL PRIMARY KEY,
+    submission_id INTEGER NOT NULL REFERENCES submission(id) ON DELETE CASCADE,
+    juri_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    total_score DECIMAL(10,2) NOT NULL,
+    feedback TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 11. SCORE_DETAIL (nilai per kriteria)
+CREATE TABLE score_detail (
+    id SERIAL PRIMARY KEY,
+    score_id INTEGER NOT NULL REFERENCES score(id) ON DELETE CASCADE,
+    rubric_criteria_id INTEGER NOT NULL REFERENCES rubric_criteria(id) ON DELETE CASCADE,
+    score_value DECIMAL(10,2) NOT NULL CHECK (score_value >= 0),
+    UNIQUE(score_id, rubric_criteria_id)
+);
+
+-- 12. SELECTION_RESULT (hasil kelulusan tiap stage)
+CREATE TABLE selection_result (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER NOT NULL REFERENCES team(id) ON DELETE CASCADE,
+    stage_id INTEGER NOT NULL REFERENCES stage(id) ON DELETE CASCADE,
+    is_passed BOOLEAN NOT NULL,
+    note TEXT,
+    announced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(team_id, stage_id)
+);
+
+-- 13. SCHEDULE
+CREATE TABLE schedule (
+    id SERIAL PRIMARY KEY,
+    event_id INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+    date_time TIMESTAMP NOT NULL,
+    description TEXT,
+    location VARCHAR(200),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 14. ANNOUNCEMENT (personalisasi pengumuman)
+CREATE TABLE announcement (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
+    target_team_id INTEGER REFERENCES team(id) ON DELETE CASCADE,
+    target_stage_id INTEGER REFERENCES stage(id) ON DELETE CASCADE,
+    type announcement_type NOT NULL,
+    published_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 15. CERTIFICATE (sertifikat otomatis)
+CREATE TABLE certificate (
+    id SERIAL PRIMARY KEY,
+    team_id INTEGER NOT NULL REFERENCES team(id) ON DELETE CASCADE,
+    event_id INTEGER NOT NULL REFERENCES event(id) ON DELETE CASCADE,
+    certificate_url TEXT NOT NULL,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 16. FAQ (dinamis)
+CREATE TABLE faq (
+    id SERIAL PRIMARY KEY,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    display_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 17. OTP (kode via email tanpa Google API)
+CREATE TABLE otp (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    is_used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 18. AUDIT_LOG (log aktivitas dan restore data)
+CREATE TABLE audit_log (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(50) NOT NULL,  -- CREATE, UPDATE, DELETE
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id INTEGER NOT NULL,
+    old_value_json JSONB,
+    new_value_json JSONB,
+    ip_address INET,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================
+-- TRIGGER untuk updated_at (opsional)
+-- =====================================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_team_updated_at BEFORE UPDATE ON team FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_submission_updated_at BEFORE UPDATE ON submission FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_score_updated_at BEFORE UPDATE ON score FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_faq_updated_at BEFORE UPDATE ON faq FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =====================================================
+-- INDEX untuk performa query
+-- =====================================================
+CREATE INDEX idx_team_ketua ON team(ketua_id);
+CREATE INDEX idx_submission_team ON submission(team_id);
+CREATE INDEX idx_submission_stage ON submission(stage_id);
+CREATE INDEX idx_score_submission ON score(submission_id);
+CREATE INDEX idx_score_juri ON score(juri_id);
+CREATE INDEX idx_selection_result_team_stage ON selection_result(team_id, stage_id);
+CREATE INDEX idx_announcement_target_team ON announcement(target_team_id);
+CREATE INDEX idx_announcement_target_stage ON announcement(target_stage_id);
+CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
+CREATE INDEX idx_otp_user ON otp(user_id);
+CREATE INDEX idx_otp_code_expires ON otp(code, expires_at);
+
+-- =====================================================
+-- DATA DUMMY
+-- =====================================================
+
+-- Insert Users
+INSERT INTO users (name, email, password_hash, role) VALUES
+('Admin Utama', 'admin@codingmu.com', 'hash_admin123', 'admin'),
+('Juri Senior', 'juri1@codingmu.com', 'hash_juri', 'juri'),
+('Juri Teknik', 'juri2@codingmu.com', 'hash_juri2', 'juri'),
+('Budi Santoso', 'budi@timkreatif.id', 'hash_budi', 'peserta'),
+('Siti Nurhaliza', 'siti@devteam.id', 'hash_siti', 'peserta'),
+('Agus Wijaya', 'agus@gamezone.id', 'hash_agus', 'peserta');
+
+-- Insert Team
+INSERT INTO team (team_name, institution, ketua_id) VALUES
+('Tim Kreatif', 'Universitas Indonesia', 4),
+('Dev Team', 'ITB', 5),
+('Game Zone', 'BINUS', 6);
+
+-- Insert Team History (riwayat perubahan data tim)
+INSERT INTO team_history (team_id, snapshot_data, changed_by) VALUES
+(1, '{"team_name":"Tim Kreatif","institution":"Universitas Indonesia","ketua_id":4}', 'budi@timkreatif.id'),
+(1, '{"team_name":"Tim Kreatif Updated","institution":"Universitas Indonesia Depok","ketua_id":4}', 'budi@timkreatif.id'),
+(2, '{"team_name":"Dev Team","institution":"ITB Bandung","ketua_id":5}', 'siti@devteam.id');
+
+-- Insert Event
+INSERT INTO event (name, description, start_date, end_date) VALUES
+('Lomba Coding MPR RI 2026', 'Kompetisi nasional pengembangan solusi digital untuk MPR RI', '2026-06-01', '2026-08-30');
+
+-- Insert Stage (sesuai swimlane: seleksi -> bootcamp -> hackathon1 -> hackathon2 -> semifinal -> final)
+INSERT INTO stage (event_id, name, stage_order, is_active) VALUES
+(1, 'Seleksi Administrasi', 1, TRUE),
+(1, 'Seleksi Karya', 2, TRUE),
+(1, 'Bootcamp', 3, TRUE),
+(1, 'Hackathon 1', 4, TRUE),
+(1, 'Hackathon 2', 5, TRUE),
+(1, 'Semifinal', 6, TRUE),
+(1, 'Final', 7, TRUE);
+
+-- Insert Schedule
+INSERT INTO schedule (event_id, date_time, description, location) VALUES
+(1, '2026-06-01 08:00:00', 'Pembukaan Lomba', 'Online - Zoom'),
+(1, '2026-06-10 23:59:00', 'Batas Submit Seleksi Karya', 'Online LMS'),
+(1, '2026-07-01 09:00:00', 'Pengumuman Hasil Seleksi', 'Online'),
+(1, '2026-07-05 08:00:00', 'Bootcamp Hari 1', 'Gedung MPR/Online Hybrid'),
+(1, '2026-07-20 08:00:00', 'Hackathon 1', 'Online'),
+(1, '2026-08-25 14:00:00', 'Grand Final & Pengumuman Juara', 'Gedung MPR');
+
+-- Insert Submission & Submission Files (upload massal)
+INSERT INTO submission (team_id, stage_id, project_type, description) VALUES
+(1, 1, 'website_application', 'Platform edukasi interaktif untuk MPR'),
+(2, 1, 'game_development', 'Game simulasi tata cara legislasi'),
+(3, 1, 'video_design', 'Video animasi sejarah MPR');
+
+INSERT INTO submission_file (submission_id, file_url, file_name, file_size) VALUES
+(1, '/uploads/team1/proposal.pdf', 'Proposal_TimKreatif.pdf', 2048000),
+(1, '/uploads/team1/poster.jpg', 'Poster_TimKreatif.jpg', 512000),
+(1, '/uploads/team1/source.zip', 'SourceCode_TimKreatif.zip', 10240000),
+(2, '/uploads/team2/game.apk', 'GameDevTeam.apk', 15728640),
+(2, '/uploads/team2/dokumentasi.pdf', 'Dokumentasi_DevTeam.pdf', 1024000),
+(3, '/uploads/team3/video.mp4', 'Animasi_MPR.mp4', 52428800);
+
+-- Insert Rubric (dinamis per stage)
+INSERT INTO rubric (stage_id, name, description) VALUES
+(2, 'Rubrik Penilaian Karya Tahap Seleksi', 'Kriteria untuk seleksi karya'),
+(4, 'Rubrik Hackathon 1', 'Penilaian untuk hackathon putaran pertama');
+
+INSERT INTO rubric_criteria (rubric_id, criterion_name, max_score, weight) VALUES
+(1, 'Kreativitas', 100, 0.3),
+(1, 'Kesesuaian Tema', 100, 0.25),
+(1, 'Teknis Implementasi', 100, 0.25),
+(1, 'Dokumentasi', 100, 0.2),
+(2, 'Inovasi', 100, 0.35),
+(2, 'User Experience', 100, 0.35),
+(2, 'Presentasi', 100, 0.3);
+
+-- Insert Score & Score Detail (rekap nilai otomatis bisa dihitung dari total bobot)
+INSERT INTO score (submission_id, juri_id, total_score, feedback) VALUES
+(1, 2, 85.5, 'Kreatif, namun dokumentasi kurang lengkap'),
+(2, 2, 90.0, 'Game menarik, sangat sesuai tema'),
+(1, 3, 88.0, 'Bagus, perlu peningkatan UX');
+
+INSERT INTO score_detail (score_id, rubric_criteria_id, score_value) VALUES
+(1, 1, 90), (1, 2, 85), (1, 3, 80), (1, 4, 87),
+(2, 1, 95), (2, 2, 90), (2, 3, 85), (2, 4, 90),
+(3, 1, 88), (3, 2, 90), (3, 3, 85), (3, 4, 89);
+
+-- Insert Selection Result (kelulusan)
+INSERT INTO selection_result (team_id, stage_id, is_passed, note) VALUES
+(1, 1, TRUE, 'Lolos seleksi administrasi'),
+(2, 1, TRUE, 'Lolos'),
+(3, 1, FALSE, 'Tidak memenuhi syarat administrasi'),
+(1, 2, TRUE, 'Karya bagus, lolos ke bootcamp'),
+(2, 2, TRUE, 'Lolos ke bootcamp');
+
+-- Insert Announcement (personalisasi)
+INSERT INTO announcement (title, content, target_team_id, target_stage_id, type) VALUES
+('Pengumuman Hasil Seleksi Administrasi', 'Selamat! Tim Anda lolos ke tahap seleksi karya.', 1, 1, 'team'),
+('Pengumuman Hasil Seleksi Administrasi', 'Mohon maaf, tim Anda belum berhasil melaju.', 3, 1, 'team'),
+('Jadwal Bootcamp', 'Bootcamp akan dilaksanakan pada 5-6 Juli 2026 secara hybrid.', NULL, 3, 'stage'),
+('Info Lomba', 'Pendaftaran ditutup 31 Mei 2026.', NULL, NULL, 'global');
+
+-- Insert Certificate
+INSERT INTO certificate (team_id, event_id, certificate_url) VALUES
+(1, 1, '/certificates/Team1_Peserta.pdf'),
+(2, 1, '/certificates/Team2_Peserta.pdf');
+
+-- Insert FAQ
+INSERT INTO faq (question, answer, display_order) VALUES
+('Apakah bisa mengganti anggota tim?', 'Hanya ketua tim yang dapat mengupdate data tim melalui menu Profil Tim.', 1),
+('Berapa maksimal file upload?', 'Maksimal 10 file per submission, masing-masing 50MB.', 2),
+('Bagaimana sistem penilaian?', 'Juri menilai berdasarkan rubrik yang sudah ditentukan. Nilai akhir dihitung otomatis.', 3);
+
+-- Insert OTP (contoh untuk user 4 = Budi)
+INSERT INTO otp (user_id, code, expires_at, is_used) VALUES
+(4, '123456', '2026-05-25 10:00:00', FALSE),
+(5, '654321', '2026-05-25 11:00:00', TRUE);
+
+-- Insert Audit Log (log aktivitas)
+INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_value_json, new_value_json, ip_address) VALUES
+(1, 'UPDATE', 'team', 1, '{"institution":"Universitas Indonesia"}', '{"institution":"Universitas Indonesia Depok"}', '192.168.1.10'),
+(2, 'CREATE', 'score', 1, NULL, '{"total_score":85.5,"juri_id":2}', '10.0.0.5'),
+(4, 'UPDATE', 'submission', 1, '{"description":"Platform edukasi"}', '{"description":"Platform edukasi interaktif"}', '203.0.113.5');
+
+-- =====================================================
+-- COMMIT (selesai)
+-- =====================================================
+
+---
+
 ## 📌 API Endpoints Utama
 
 | Method | Endpoint                            | Role         | Deskripsi                          |
@@ -545,13 +933,3 @@ Buat request ke `/api/certificates/generate/1` dengan body `{"team_id":1}`. Liha
 Dengan README ini, Anda memiliki panduan **end-to-end** untuk menjalankan, menguji, dan mendeploy backend LMS. Semua fitur yang di-request (riwayat perubahan, rubrik dinamis, rekap otomatis, upload massal, personalisasi pengumuman, dashboard, export, sertifikat, OTP, audit log, restore data, dan redis cache) telah terintegrasi.
 
 Jika ada pertanyaan atau error, cek bagian Troubleshooting atau buka issue di repository GitHub.
-
-**Happy Coding! 🚀**
-```
-
----
-
-**Catatan:**  
-- Ganti `username/lms-backend.git` dengan repository GitHub asli Anda.  
-- File Postman collection di atas bisa langsung di-copy sebagai file `.json`.  
-- Untuk production, pastikan `APP_DEBUG=false`, `QUEUE_CONNECTION=redis`, dan gunakan supervisor untuk menjaga worker tetap hidup.

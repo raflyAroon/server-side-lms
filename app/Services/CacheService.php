@@ -3,11 +3,10 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 
 class CacheService
 {
-    protected int $defaultTtl = 300; // 5 menit
+    protected int $defaultTtl = 300;
 
     public function remember(string $key, callable $callback, ?int $ttl = null): mixed
     {
@@ -19,13 +18,12 @@ class CacheService
         Cache::forget($key);
     }
 
+    // Sederhanakan forgetPattern - tidak pakai Redis dulu
     public function forgetPattern(string $pattern): void
     {
-        $redis = Cache::store('redis')->getRedis();
-        $keys = $redis->keys($pattern);
-        if (!empty($keys)) {
-            $redis->del($keys);
-        }
+        // Untuk sementara, lewati karena tidak semua driver support
+        // Jika pakai file/database, pattern matching sulit.
+        // Nanti bisa dioptimalkan setelah redis berjalan.
     }
 
     public function get(string $key): mixed

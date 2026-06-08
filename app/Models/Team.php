@@ -70,6 +70,21 @@ class Team extends Model
     {
         return $this->hasMany(Announcement::class, 'target_team_id');
     }
+    
+    public function members()
+    {
+        return $this->hasMany(TeamMember::class);
+    }
+    
+    public function getFullMembersAttribute()
+    {
+        $members = $this->members->keyBy('position');
+        return [
+            'ketua' => $members['ketua'] ?? null,
+            'anggota1' => $members['anggota1'] ?? null,
+            'anggota2' => $members['anggota2'] ?? null,
+        ];
+    }
 
     // ========== HELPER (OPTIONAL) ==========
     /**

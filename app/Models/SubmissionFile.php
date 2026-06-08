@@ -6,7 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class SubmissionFile extends Model
 {
-    protected $fillable = ['submission_id', 'file_url', 'file_name', 'file_size'];
+    protected $fillable = [
+        'submission_id', 'file_url', 'file_name', 'file_size',
+        'file_type', 'external_url', 'mime_type', 'file_path', 'is_verified'
+    ];
+
+    protected $casts = [
+        'is_verified' => 'boolean',
+    ];
 
     public function submission()
     {

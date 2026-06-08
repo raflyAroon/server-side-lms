@@ -11,21 +11,40 @@ use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\SelectionController;
 use Illuminate\Support\Facades\Route;
 
-// Public
+// CSRF Cookie (wajib dipanggil sebelum login/register)
+Route::get('/sanctum/csrf-cookie', function () {
+    return response()->json(['message' => 'CSRF cookie set'])->cookie(
+        'XSRF-TOKEN',
+        csrf_token(),
+        60 * 24,
+        '/',
+        null,
+        false,
+        false,
+        false,
+        'lax'
+    );
+})->middleware('web');
+
+// Endpoint publik (tidak perlu auth)
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/request-otp', [AuthController::class, 'requestOtp']);
 Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
+Route::get('/announcements', [AnnouncementController::class, 'index']);
+Route::get('/faqs', [FaqController::class, 'index']);
 
-// Protected
+// Protected routes (memerlukan auth:sanctum)
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
     // Team
     Route::prefix('team')->group(function () {
+        Route::post('/', [TeamController::class, 'store']);           // <-- NEW: create team + members
         Route::get('/', [TeamController::class, 'show']);
         Route::put('/', [TeamController::class, 'update']);
         Route::get('/history', [TeamController::class, 'history']);
@@ -35,27 +54,30 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Submission & files
     Route::apiResource('submissions', SubmissionController::class)->except(['index', 'destroy']);
     Route::post('/submissions/{submission}/files', [SubmissionController::class, 'uploadFiles']);
+    Route::post('/submissions/{submission}/links', [SubmissionController::class, 'addLink']);      // <-- NEW
+    Route::post('/submissions/{submission}/submit', [SubmissionController::class, 'submit']);      // <-- NEW
     Route::delete('/submission-files/{file}', [SubmissionController::class, 'deleteFile']);
 
-    // Rubric (read only for peserta/juri, admin can write)
+    // Rubric
     Route::get('/rubrics/stage/{stageId}', [RubricController::class, 'getByStage']);
     Route::post('/rubrics', [RubricController::class, 'store'])->middleware('role:admin');
     Route::put('/rubrics/{rubric}', [RubricController::class, 'update'])->middleware('role:admin');
     Route::delete('/rubrics/{rubric}', [RubricController::class, 'destroy'])->middleware('role:admin');
+    Route::get('/stages', function (\Illuminate\Http\Request $request) {
+        return \App\Models\Stage::where('event_id', $request->event_id)->orderBy('stage_order')->get();
+    });
 
     // Scores
     Route::post('/scores', [ScoreController::class, 'store'])->middleware('role:juri');
     Route::get('/scores/submission/{submissionId}', [ScoreController::class, 'getBySubmission']);
     Route::get('/scores/auto-recap/{submissionId}', [ScoreController::class, 'autoRecap']);
 
-    // Announcements
-    Route::get('/announcements', [AnnouncementController::class, 'index']);
+    // Announcements (CRUD admin)
     Route::post('/announcements', [AnnouncementController::class, 'store'])->middleware('role:admin');
     Route::put('/announcements/{announcement}', [AnnouncementController::class, 'update'])->middleware('role:admin');
     Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy'])->middleware('role:admin');
 
-    // FAQ
-    Route::get('/faqs', [FaqController::class, 'index']);
+    // FAQ (CRUD admin)
     Route::post('/faqs', [FaqController::class, 'store'])->middleware('role:admin');
     Route::put('/faqs/{faq}', [FaqController::class, 'update'])->middleware('role:admin');
     Route::delete('/faqs/{faq}', [FaqController::class, 'destroy'])->middleware('role:admin');
@@ -81,5 +103,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware('role:admin')->group(function () {
         Route::get('/audit-logs', [AuditLogController::class, 'index']);
         Route::get('/audit-logs/entity/{entityType}/{entityId}', [AuditLogController::class, 'getByEntity']);
+    });
+
+    // Selection process (admin only)
+    Route::middleware('role:admin')->prefix('selection')->group(function () {
+        Route::post('/process/{stage}', [SelectionController::class, 'processSelection']);
+        Route::get('/results/{stage}', [SelectionController::class, 'getResults']);
     });
 });
