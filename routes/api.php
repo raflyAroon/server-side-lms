@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\SelectionController;
+use App\Http\Controllers\Api\AdminTeamController;
 use Illuminate\Support\Facades\Route;
 
 // CSRF Cookie (wajib dipanggil sebelum login/register)
@@ -44,7 +45,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Team
     Route::prefix('team')->group(function () {
-        Route::post('/', [TeamController::class, 'store']);           // <-- NEW: create team + members
+        Route::post('/', [TeamController::class, 'store']);                   // create team + members (cara lama)
+        Route::post('/complete-registration', [TeamController::class, 'completeRegistration']); // NEW: 4-step wizard
         Route::get('/', [TeamController::class, 'show']);
         Route::put('/', [TeamController::class, 'update']);
         Route::get('/history', [TeamController::class, 'history']);
@@ -54,8 +56,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // Submission & files
     Route::apiResource('submissions', SubmissionController::class)->except(['index', 'destroy']);
     Route::post('/submissions/{submission}/files', [SubmissionController::class, 'uploadFiles']);
-    Route::post('/submissions/{submission}/links', [SubmissionController::class, 'addLink']);      // <-- NEW
-    Route::post('/submissions/{submission}/submit', [SubmissionController::class, 'submit']);      // <-- NEW
+    Route::post('/submissions/{submission}/links', [SubmissionController::class, 'addLink']);
+    Route::post('/submissions/{submission}/submit', [SubmissionController::class, 'submit']);
     Route::delete('/submission-files/{file}', [SubmissionController::class, 'deleteFile']);
 
     // Rubric
@@ -109,5 +111,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware('role:admin')->prefix('selection')->group(function () {
         Route::post('/process/{stage}', [SelectionController::class, 'processSelection']);
         Route::get('/results/{stage}', [SelectionController::class, 'getResults']);
+    });
+
+    // ========== ADMIN TEAM MANAGEMENT (baru) ==========
+    Route::middleware('role:admin')->prefix('admin')->group(function () {
+        Route::get('/teams', [AdminTeamController::class, 'index']);
+        Route::get('/teams/{id}', [AdminTeamController::class, 'show']);
+        Route::post('/teams/{id}/selection', [AdminTeamController::class, 'updateSelection']);
     });
 });

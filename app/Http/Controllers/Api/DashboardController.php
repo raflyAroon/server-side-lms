@@ -39,20 +39,25 @@ class DashboardController extends Controller
             }
 
             $submission = Submission::where('team_id', $team->id)->latest()->first();
-            $progress = $submission ? '50%' : '0%';
-
+            $progress = $submission ? '50%' : '0%';                
+            
             $teamMembers = $team->members->map(fn($a) => [
                 'name' => $a->name,
                 'email' => $a->email,
                 'role' => 'Anggota',
             ]);
-
+            
+            $selectionStatus = $team->selection_status ?? 'pending';
+            $selectionNote = $team->selection_note ?? null;
+            
             return response()->json([
                 'progress' => $progress,
                 'points' => '1.250',
                 'rank' => '#12',
                 'team_name' => $team->team_name,
                 'team_members' => $teamMembers,
+                'selection_status' => $selectionStatus,
+                'selection_note' => $selectionNote,
             ]);
         } catch (\Exception $e) {
             Log::error('Error di DashboardController@peserta: ' . $e->getMessage(), [
