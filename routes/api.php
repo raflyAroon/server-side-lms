@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\ExportController;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\SelectionController;
 use App\Http\Controllers\Api\AdminTeamController;
+use App\Http\Controllers\Api\PesertaController;
+use App\Http\Controllers\Api\AdminController;
 use Illuminate\Support\Facades\Route;
 
 // CSRF Cookie (wajib dipanggil sebelum login/register)
@@ -113,10 +115,42 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/results/{stage}', [SelectionController::class, 'getResults']);
     });
 
-    // ========== ADMIN TEAM MANAGEMENT (baru) ==========
+    // ========== ADMIN TEAM MANAGEMENT (lama) ==========
     Route::middleware('role:admin')->prefix('admin')->group(function () {
         Route::get('/teams', [AdminTeamController::class, 'index']);
         Route::get('/teams/{id}', [AdminTeamController::class, 'show']);
         Route::post('/teams/{id}/selection', [AdminTeamController::class, 'updateSelection']);
+    });
+
+    // ========== PESERTA ROUTES (baru untuk Sidebar Status, Profile, Hackathon) ==========
+    Route::middleware('role:peserta')->prefix('peserta')->group(function () {
+        // Sidebar 1 - Status Tim
+        Route::get('/team/status', [PesertaController::class, 'teamStatus']);
+        Route::post('/team/confirm-lolos-seleksi', [PesertaController::class, 'confirmLolosSeleksi']);
+        Route::post('/team/confirm-bootcamp', [PesertaController::class, 'confirmBootcamp']);
+
+        // Sidebar 2 - Profil Tim
+        Route::get('/team/profile', [PesertaController::class, 'teamProfile']);
+        Route::put('/team/profile', [PesertaController::class, 'updateTeamProfile']); // opsional
+
+        // Sidebar 3 - Hackathon Submissions
+        Route::get('/submissions', [PesertaController::class, 'getSubmissions']);
+        Route::post('/submissions/{submission}/files', [PesertaController::class, 'uploadSubmissionFile']);
+        Route::post('/submissions/{submission}/submit', [PesertaController::class, 'submitSubmission']);
+    });
+
+    // ========== ADMIN ROUTES (baru untuk manajemen tim & review submission) ==========
+    // Perhatikan: route di atas sudah ada prefix 'admin' untuk AdminTeamController.
+    // Agar tidak bentrok, kita gunakan prefix 'admin/manage' atau kita satukan dengan yang sudah ada.
+    // Karena AdminTeamController hanya menyediakan list, show, dan updateSelection (pending->approved/rejected),
+    // maka kita bisa menambahkan route baru di dalam group 'admin' yang sudah ada.
+    // Namun rute baru di bawah ini menggunakan AdminController (berbeda dengan AdminTeamController).
+    // Kita akan tempatkan di group 'admin' yang sama agar tidak konflik.
+    Route::middleware('role:admin')->prefix('admin')->group(function () {
+        // Route baru untuk approve/reject dan submission review
+        Route::post('/teams/{id}/approve', [AdminController::class, 'approveTeam']);
+        Route::post('/teams/{id}/reject', [AdminController::class, 'rejectTeam']);
+        Route::get('/teams/{id}/submissions', [AdminController::class, 'teamSubmissions']);
+        Route::post('/submissions/{submissionId}/review', [AdminController::class, 'reviewSubmission']);
     });
 });

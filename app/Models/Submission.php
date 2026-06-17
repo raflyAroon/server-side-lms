@@ -31,4 +31,11 @@ class Submission extends Model
     {
         return $this->hasMany(Score::class);
     }
+
+    public function scopeForHackathon($query)
+{
+    return $query->whereHas('stage', function ($q) {
+        $q->where('name', 'like', '%hackathon%');
+    });
+}
 }

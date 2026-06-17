@@ -57,6 +57,14 @@ class Team extends Model
 
     public function documents() { return $this->hasMany(TeamDocument::class); }
     
+    public function isSelectionStatus(string $status): bool { return $this->selection_status === $status; }
+    
+    public function canConfirmLolosSeleksi(): bool { return $this->selection_status === 'lolos_seleksi'; }
+
+    public function canConfirmBootcamp(): bool { return $this->selection_status === 'follow_the_bootcamp'; }
+
+    public function isInHackathonPhase(): bool { return in_array($this->selection_status, ['first_half_hackathon', 'semi_final', 'final']); }
+    
     public function getFullMembersAttribute() {
         $members = $this->members->keyBy('position');
         return [
@@ -68,7 +76,7 @@ class Team extends Model
 
     // Scope untuk admin
     public function scopePending($query) { return $query->where('selection_status', 'pending'); }  
-    public function scopeApproved($query) { return $query->where('selection_status', 'approved'); }
+    public function scopeApproved($query) { return $query->where('selection_status', 'lolos_seleksi'); }
 
     // ========== HELPER (OPTIONAL) ==========
     /** Clear all cache related to this team manually. **/
@@ -80,3 +88,5 @@ class Team extends Model
             Cache::forgetPattern("announcements:team:{$this->id}:*");
     }
 }
+
+
